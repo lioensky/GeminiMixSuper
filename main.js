@@ -1315,8 +1315,15 @@ async function parseFile(fileType, fileContent) {
     try {
         switch(fileType.toLowerCase()) {
             case 'application/pdf':
-                const pdfData = await pdfParse(fileContent);
-                return pdfData.text;
+                try {
+                    console.log('开始解析 PDF 文件，文件大小:', fileContent.length, '字节');
+                    const pdfData = await pdfParse(Buffer.from(fileContent));
+                    console.log('PDF 解析完成，提取的文本长度:', pdfData.text.length);
+                    return pdfData.text;
+                } catch (pdfError) {
+                    console.error('PDF 解析错误:', pdfError);
+                    throw new Error(`PDF 解析失败: ${pdfError.message}`);
+                }
                 
             case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
                 const result = await mammoth.extractRawText({buffer: fileContent});
