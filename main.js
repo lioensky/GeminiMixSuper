@@ -6,12 +6,17 @@ import { createRequire } from 'module';
 import https from 'https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import iconv from 'iconv-lite';
+import {
+    Think_Lora_PROMPT,
+    RELAY_PROMPT,
+    Image_Model_PROMPT,
+    Image_SendR1_PROMPT,
+    GoogleSearch_Determine_PROMPT,
+    GoogleSearch_PROMPT,
+    GoogleSearch_Send_PROMPT,
+} from './prompts.js';
 const require = createRequire(import.meta.url);
-<<<<<<< HEAD
 const pdfParse = require('pdf-parse');
-=======
-const pdfParse = require("pdf-parse");
->>>>>>> 1a203727a4ff5afef83f7d889f9e5d6dce85d6b7
 const cheerio = require('cheerio');
 const XLSX = require('xlsx');
 const { parse } = require('csv-parse/sync');
@@ -37,7 +42,6 @@ const Model_output_CONTEXT_WINDOW = Number(process.env.Model_output_CONTEXT_WIND
 const Model_output_TEMPERATURE = Number(process.env.Model_output_TEMPERATURE);
 const Model_output_WebSearch = process.env.Model_output_WebSearch === 'True';
 
-const RELAY_PROMPT = process.env.RELAY_PROMPT;
 const HYBRID_MODEL_NAME = process.env.HYBRID_MODEL_NAME || 'GeminiMIXR1';
 const OUTPUT_API_KEY = process.env.OUTPUT_API_KEY;
 
@@ -46,8 +50,6 @@ const Image_MODEL = process.env.Image_MODEL;
 const Image_Model_MAX_TOKENS = Number(process.env.Image_Model_MAX_TOKENS);
 const Image_Model_CONTEXT_WINDOW = Number(process.env.Image_Model_CONTEXT_WINDOW);
 const Image_Model_TEMPERATURE = Number(process.env.Image_Model_TEMPERATURE);
-const Image_Model_PROMPT = process.env.Image_Model_PROMPT;
-const Image_SendR1_PROMPT = process.env.Image_SendR1_PROMPT;
 
 // 添加新的环境变量
 const GoogleSearch_API_KEY = process.env.GoogleSearch_API_KEY;
@@ -55,9 +57,6 @@ const GoogleSearch_MODEL = process.env.GoogleSearch_MODEL;
 const GoogleSearch_Model_MAX_TOKENS = Number(process.env.GoogleSearch_Model_MAX_TOKENS);
 const GoogleSearch_Model_CONTEXT_WINDOW = Number(process.env.GoogleSearch_Model_CONTEXT_WINDOW);
 const GoogleSearch_Model_TEMPERATURE = Number(process.env.GoogleSearch_Model_TEMPERATURE);
-const GoogleSearch_Determine_PROMPT = process.env.GoogleSearch_Determine_PROMPT;
-const GoogleSearch_PROMPT = process.env.GoogleSearch_PROMPT;
-const GoogleSearch_Send_PROMPT = process.env.GoogleSearch_Send_PROMPT;
 
 // 用于存储当前任务的信息
 let currentTask = null;
@@ -527,15 +526,15 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
                 ...messagesForR1,  // 使用过滤后的消息
                 ...(searchResults ? [{
                     role: 'system',
-                    content: `${process.env.GoogleSearch_Send_PROMPT}${searchResults}`
+                    content: `${GoogleSearch_Send_PROMPT}${searchResults}`
                 }] : []),
                 ...(image_index_content ? [{
                     role: 'system',
-                    content: `${process.env.Image_SendR1_PROMPT}${image_index_content}`
+                    content: `${Image_SendR1_PROMPT}${image_index_content}`
                 }] : []),
                 {
                     role: "system",
-                    content: process.env.Think_Lora_PROMPT
+                    content: Think_Lora_PROMPT
                 }
             ];
 
@@ -593,7 +592,7 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
                     ...messages,  // 使用原始消息，保留图片数据
                     ...(searchResults ? [{
                         role: 'system',
-                        content: `${process.env.GoogleSearch_Send_PROMPT}${searchResults}`
+                        content: `${GoogleSearch_Send_PROMPT}${searchResults}`
                     }] : []),
                     {
                         role: 'system',
@@ -699,7 +698,7 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
                                         ...messages,
                                         ...(searchResults ? [{
                                             role: 'system',
-                                            content: `${process.env.GoogleSearch_Send_PROMPT}${searchResults}`
+                                            content: `${GoogleSearch_Send_PROMPT}${searchResults}`
                                         }] : []),
                                         {
                                             role: 'assistant',
@@ -872,7 +871,7 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
                                 ...messages,
                                 ...(searchResults ? [{
                                     role: 'system',
-                                    content: `${process.env.GoogleSearch_Send_PROMPT}${searchResults}`
+                                    content: `${GoogleSearch_Send_PROMPT}${searchResults}`
                                 }] : []),
                                 {
                                     role: 'system',
@@ -1200,7 +1199,7 @@ async function determineIfSearchNeeded(messages) {
             {
                 model: process.env.SearchDetermine_MODEL, // 改用新的小模型
                 messages: [
-                    { role: "user", content: process.env.GoogleSearch_Determine_PROMPT },
+                    { role: "user", content: GoogleSearch_Determine_PROMPT },
                     ...messages
                 ],
                 max_tokens: Number(process.env.SearchDetermine_Model_MAX_TOKENS), // 使用对应的参数
