@@ -7,7 +7,11 @@ import https from 'https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import iconv from 'iconv-lite';
 const require = createRequire(import.meta.url);
+<<<<<<< HEAD
 const pdfParse = require('pdf-parse');
+=======
+const pdfParse = require("pdf-parse");
+>>>>>>> 1a203727a4ff5afef83f7d889f9e5d6dce85d6b7
 const cheerio = require('cheerio');
 const XLSX = require('xlsx');
 const { parse } = require('csv-parse/sync');
