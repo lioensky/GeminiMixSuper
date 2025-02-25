@@ -1440,6 +1440,15 @@ async function parseFile(fileType, fileContent) {
     }
 }
 
+// 添加获取混合模型名的 GET 接口
+app.get('/v1/models', apiKeyAuth, (req, res) => {
+    const model_list = {
+        "object": "list",
+        "data": [{"id": HYBRID_MODEL_NAME, "object": "model", "owned_by": "mixmodel"}]
+    };
+    res.json(model_list);
+});
+
 app.listen(PROXY_PORT, () => {
     console.log(`Hybrid AI proxy server started on port ${PROXY_PORT}`);
 });
