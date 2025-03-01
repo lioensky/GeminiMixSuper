@@ -26,11 +26,11 @@ dotenv.config();
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 
-const PROXY_URL = process.env.PROXY_URL;
+const PROXY_URL = process.env.PROXY_URL || "https://api.deepseek.com";
 const PROXY_PORT = Number(process.env.PROXY_PORT);
 
 const DEEPSEEK_R1_API_KEY = process.env.DEEPSEEK_R1_API_KEY;
-const DEEPSEEK_R1_MODEL = process.env.DEEPSEEK_R1_MODEL;
+const DEEPSEEK_R1_MODEL = process.env.DEEPSEEK_R1_MODEL || "deepseek-reasoner";
 const DEEPSEEK_R1_MAX_TOKENS = Number(process.env.DEEPSEEK_R1_MAX_TOKENS);
 const DEEPSEEK_R1_CONTEXT_WINDOW = Number(process.env.DEEPSEEK_R1_CONTEXT_WINDOW);
 const DEEPSEEK_R1_TEMPERATURE = Number(process.env.DEEPSEEK_R1_TEMPERATURE);
@@ -77,7 +77,10 @@ if (process.platform === 'win32') {
     }
 }
 
-// 简化随机请求头生成函数
+/**
+ * 简化随机请求头生成函数
+ * @returns 
+ */
 function generateRandomHeaders() {
     const userAgent = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36`;
 
@@ -90,7 +93,11 @@ function generateRandomHeaders() {
     };
 }
 
-// 添加URL内容解析函数
+/**
+ * 解析URL内容
+ * @param {*} url 
+ * @returns 
+ */
 async function parseUrlContent(url) {
     console.log('parseUrlContent 函数被调用了！');
 
@@ -215,7 +222,13 @@ async function parseUrlContent(url) {
     return `[无法获取 ${url} 的内容: ${lastError.message}]`;
 }
 
-// API 密钥验证中间件
+/**
+ * API 密钥验证中间件
+ * @param {*} req 
+ * @param {*} res 
+ * @param {*} next 
+ * @returns 
+ */
 const apiKeyAuth = (req, res, next) => {
     const apiKey = req.headers.authorization;
 
@@ -225,7 +238,13 @@ const apiKeyAuth = (req, res, next) => {
     next();
 };
 
-// 合并 sanitizeLogContent 和 sanitizeContent 为一个函数
+/**
+ * 清理日志内容中的敏感信息
+ * 
+ * 合并 sanitizeLogContent 和 sanitizeContent 为一个函数
+ * @param {*} content 
+ * @returns 
+ */
 function sanitizeContent(content) {
     if (Array.isArray(content)) {
         return content.map(item => {
@@ -244,7 +263,46 @@ function sanitizeContent(content) {
     return content;
 }
 
-// 简化的取消任务函数
+/** 
+ * 解析 DeepSeek 官方 API 的 R1 流式响应内容
+ * 
+ * DeepSeek R1 返回的 SSE 消息格式为两个 chunk data, 但实际仅需要合并两个data中的reasoning_content内容
+ * 
+ * @param {*} chunkStr - 流式响应的字符串
+ * @returns - 合并并解析后的流式响应 JSON 对象
+ */
+function parseDeepSeekResponse(chunkStr) {
+    if (DEEPSEEK_R1_MODEL !== 'deepseek-reasoner') {
+        // 非官方 DeepSeek R1 模型, 直接解析 chunkStr
+        return JSON.parse(chunkStr.replace(/^data: /, ''));
+    }
+
+    // 将 chunkStr 按行分割
+    let lines = chunkStr.split('\n').filter(line => line.trim() !== '');
+    let mergedReasoningContent = '';
+
+    // 遍历每一行
+    lines.forEach(line => {
+        // 去掉 "data: " 前缀并解析 JSON
+        let jsonData = JSON.parse(line.replace('data: ', ''));
+        // 提取 reasoning_content 并合并
+        if (jsonData.choices[0].delta.reasoning_content) {
+            mergedReasoningContent += jsonData.choices[0].delta.reasoning_content;
+        }
+    });
+
+    // 将合并后的 reasoning_content 更新到第一个 chunk 中
+    let firstChunk = JSON.parse(lines[0].replace('data: ', ''));
+    firstChunk.choices[0].delta.reasoning_content = mergedReasoningContent;
+
+    // 返回合并后的结果
+    return firstChunk;
+}
+
+/**
+ * 简化的取消任务函数
+ * @returns 
+ */
 function cancelCurrentTask() {
     if (!currentTask) {
         return;
@@ -284,7 +342,11 @@ function cancelCurrentTask() {
     }
 }
 
-// 添加一个队列处理 URL 的函数
+/**
+ * 处理 URL 队列
+ * @param {*} urls 
+ * @returns 
+ */
 async function processUrlQueue(urls) {
     console.log('开始处理 URL 队列:', urls);
     const results = [];
@@ -305,7 +367,11 @@ async function processUrlQueue(urls) {
     return results;
 }
 
-// 修改 preprocessMessages 函数，添加消息清理功能
+/**
+ * 预处理消息，清理消息内容中的敏感信息
+ * @param {*} messages 
+ * @returns 
+ */
 async function preprocessMessages(messages) {
     console.log('开始预处理消息...');
     let processedMessages = [...messages];
@@ -537,6 +603,17 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
                     content: Think_Lora_PROMPT
                 }
             ];
+            // DeepSeek 官方API的限制, 系统消息必须放在最前面 (siliconflow并不受限制)
+            // 将messagesForR1中的role为'system'的内容放置在最前面
+            messagesForR1 = messagesForR1.sort((a, b) => {
+                if (a.role === 'system' && b.role !== 'system') {
+                    return -1;
+                } else if (a.role !== 'system' && b.role === 'system') {
+                    return 1;
+                } else {
+                    return 0;
+                }
+            });
 
             // R1 请求使用过滤后的消息
             const r1CancelToken = axios.CancelToken.source();
@@ -544,6 +621,7 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
                 modelType: 'R1',
                 cancelTokenSource: r1CancelToken
             });
+            // console.log('发送给 R1 的消息:', messagesForR1);
 
             const deepseekResponse = await axios.post(
                 `${PROXY_URL}/v1/chat/completions`,
@@ -617,6 +695,7 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
 
             // 只有在 R1 请求成功时才执行这部分代码
             if (deepseekResponse) {
+                console.log('已接入 DeepSeek R1, 开始思考...');
                 let thinkingContent = '';
                 let receivedThinkingEnd = false;
                 let choiceIndex = 0;
@@ -629,12 +708,14 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
 
                         // 修改日志输出方式
                         try {
-                            if (chunkStr.trim() === 'data: [DONE]') {
+                            // 若 chunkStr 中不包含 reasoning_content, 则直接返回
+                            if (!chunkStr.includes('reasoning_content')) {
                                 return;
                             }
-                            const deepseekData = JSON.parse(chunkStr.replace(/^data: /, ''));
+                            const deepseekData = parseDeepSeekResponse(chunkStr);
+                            // console.log('\ndeepseekData:\n', deepseekData);
 
-                            // 只输出实际的内容变化
+                            // 只输出实际的内容变化, 即流式响应中的 reasoning_content 内容
                             const reasoningContent = deepseekData.choices[0]?.delta?.reasoning_content;
                             if (reasoningContent) {
                                 process.stdout.write(reasoningContent); // 使用 process.stdout.write 实现流式输出
@@ -923,7 +1004,14 @@ app.post('/v1/chat/completions', apiKeyAuth, async (req, res) => {
     }
 });
 
-// 修改 callGemini 函数
+/**
+ * 调用 Gemini API
+ * @param {*} messages 
+ * @param {*} res 
+ * @param {*} cancelTokenSource 
+ * @param {*} originalRequest 
+ * @returns 
+ */
 function callGemini(messages, res, cancelTokenSource, originalRequest) {
     return new Promise((resolve, reject) => {
         let choiceIndex = 0;
@@ -1057,7 +1145,11 @@ function callGemini(messages, res, cancelTokenSource, originalRequest) {
     });
 }
 
-// 处理图片识别的函数
+/**
+ * 处理图片识别
+ * @param {*} imageMessage 
+ * @returns 
+ */
 async function processImage(imageMessage) {
     // 创建用于日志的安全版本
     const logSafeImageMessage = {
@@ -1151,7 +1243,11 @@ async function processImage(imageMessage) {
     }
 }
 
-// 检查消息是否包含本轮新的图片
+/**
+ * 检查消息是否包含本轮新的图片
+ * @param {*} messages 
+ * @returns 
+ */
 function hasNewImages(messages) {
     const logSafeMessages = messages.map(msg => ({
         ...msg,
@@ -1165,7 +1261,11 @@ function hasNewImages(messages) {
     return hasImages;
 }
 
-// 提取最后一条消息中的图片
+/**
+ * 提取最后一条消息中的图片
+ * @param {*} messages 
+ * @returns 
+ */
 function extractLastImages(messages) {
     const lastMessage = messages[messages.length - 1];
     const logSafeMessage = {
@@ -1190,7 +1290,11 @@ function extractLastImages(messages) {
     return images;
 }
 
-// 添加判断是否需要联网搜索的函数
+/**
+ * 调用Gemini flash lite小模型判断是否需要联网搜索
+ * @param {*} messages 
+ * @returns 
+ */
 async function determineIfSearchNeeded(messages) {
     console.log('开始判断是否需要联网搜索');
     try {
@@ -1223,7 +1327,11 @@ async function determineIfSearchNeeded(messages) {
     }
 }
 
-// 修改执行联网搜索的函数
+/**
+ * 修改执行联网搜索的函数
+ * @param {*} messages 
+ * @returns 
+ */
 async function performWebSearch(messages) {
     console.log('开始执行联网搜索');
     try {
@@ -1307,13 +1415,22 @@ async function performWebSearch(messages) {
     }
 }
 
-// 添加正确的 removeActiveRequest 函数
+/**
+ * 移除活动请求, 用于停止R1在思考后输出内容
+ * @param {*} modelType 
+ */
 function removeActiveRequest(modelType) {
     activeRequests = activeRequests.filter(req => req.modelType !== modelType);
     console.log(`${modelType} 请求已完成，从活动请求列表中移除`);
 }
 
-// 修改文件解析函数中的 CSV 部分
+// 
+/**
+ * 解析文件内容
+ * @param {*} fileType 
+ * @param {*} fileContent 
+ * @returns 
+ */
 async function parseFile(fileType, fileContent) {
     try {
         switch (fileType.toLowerCase()) {
